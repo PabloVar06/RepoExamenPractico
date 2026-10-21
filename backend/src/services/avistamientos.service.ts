@@ -12,8 +12,13 @@ export async function listar(criaturaId?: string) {
     .populate('criatura').sort({ fecha: -1, _id: -1 }).lean();
 }
 export async function obtener(id: string) {
-  const doc = await Avistamiento.findById(idValido(id));
-  if (!doc) throw new ApiError(404, 'Avistamiento no encontrado');
+  const doc = await Avistamiento.findById(idValido(id))
+    .populate('criatura');
+
+  if (!doc) {
+    throw new ApiError(404, 'Avistamiento no encontrado');
+  }
+
   return doc;
 }
 export async function crear(body: unknown) {
