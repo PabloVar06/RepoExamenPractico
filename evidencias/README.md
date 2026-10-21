@@ -95,50 +95,162 @@ const doc = await Avistamiento.findById(idValido(id))
 De esta manera, el backend devuelve el objeto de la criatura con su nombre y el frontend puede mostrarlo correctamente sin necesidad de modificaciones adicionales.
 -----
 
-B-03 · Se acepta un tipo de criatura inválido
-Al enviar una petición de actualización directa desde un cliente HTTP con un tipo no contemplado por las reglas de negocio (como "fantasma"), el backend persiste el cambio con éxito en lugar de rechazarlo.
+## B-03 · Se acepta un tipo de criatura inválido
 
-Esto ocurre porque la validación del campo tipo recae únicamente en los controles de la interfaz de usuario (selector HTML) y el backend carece de una regla de validación o enumeración estricta a nivel de esquema/servicio.
+Al enviar una petición de actualización desde Thunder Client con un tipo de criatura no permitido, como `"fantasma"`, el backend permite guardar el cambio, aunque los únicos tipos válidos son `mitica`, `elemental`, `mecanica` y `espectral`.
 
-Backend:
+Esto ocurre porque, aunque el modelo de MongoDB tiene configurada correctamente la validación `enum`, la función de actualización no ejecutaba los validadores de Mongoose.
 
-En el archivo del modelo correspondiente (criatura.model.ts o esquema de Mongoose/ORM utilizado), la propiedad tipo está definida como un string genérico sin restricción de valores permitidos:
+**Backend:**
 
-TypeScript
+En el archivo `Criatura.model.ts`, los tipos permitidos están definidos mediante:
+
+```ts
+export const TIPOS = [
+  'mitica',
+  'elemental',
+  'mecanica',
+  'espectral'
+] as const;
+```
+
+Y el esquema utiliza:
+
+```ts
 tipo: {
   type: String,
   required: true,
+  enum: [...TIPOS]
 }
-Al procesar la actualización en el controlador o servicio, cualquier valor de texto pasa la validación y se guarda directamente en la base de datos.
+```
 
-Impacto:
+Sin embargo, en `criaturas.service.ts`, la función `actualizar()` utilizaba:
 
-El selector HTML del frontend previene selecciones erróneas en la vista, pero no protege a los endpoints de la API frente a peticiones externas o directas, generando inconsistencias en los datos almacenados.
+```ts
+const doc = await Criatura.findByIdAndUpdate(
+  idValido(id),
+  { $set: cambios },
+  { new: true }
+);
+```
 
-Solución: Restringir los valores permitidos para el campo tipo mediante un enum en el esquema del modelo (o en la capa de validación del DTO/middleware).
+Por defecto, `findByIdAndUpdate()` no ejecuta los validadores del esquema, permitiendo almacenar valores que incumplen las restricciones del modelo.
 
-Cambiar en la definición del esquema:
+**Impacto:**
 
-TypeScript
-tipo: {
-  type: String,
-  required: true,
-}
+El selector HTML del frontend limita las opciones disponibles para el usuario, pero no protege directamente los endpoints de la API. Esto permite que clientes HTTP externos envíen valores inválidos y generen inconsistencias en MongoDB.
+
+**Solución:** Agregar `runValidators: true` a la consulta de actualización para ejecutar las validaciones definidas en el esquema.
+
+Cambiar:
+
+```ts
+const doc = await Criatura.findByIdAndUpdate(
+  idValido(id),
+  { $set: cambios },
+  { new: true }
+);
+```
+
 Por:
 
-TypeScript
+```ts
+const doc = await Criatura.findByIdAndUpdate(
+  idValido(id),
+  { $set: cambios },
+  {
+    new: true,
+    runValidators: true
+  }
+);
+```
+
+De esta manera, Mongoose comprueba que el tipo enviado pertenezca a los valores permitidos.
+
+**Verificación esperada:**
+
+- Una actualización con `"tipo": "mitica"` devuelve `200 OK`.
+- Una actualización con `"tipo": "fantasma"` devuelve `400 Bad Request` con un mensaje de validación.
+- Una consulta GET posterior conserva el último tipo válido almacenado.
+
+**Estado:** Corrección implementada en el código. Pendiente de confirmar los tres resultados mediante Thunder Client.
+-----
+## B-03 · Se acepta un tipo de criatura inválido
+
+Al enviar una petición de actualización desde Thunder Client con un tipo de criatura no permitido, como `"fantasma"`, el backend permite guardar el cambio, aunque los únicos tipos válidos son `mitica`, `elemental`, `mecanica` y `espectral`.
+
+Esto ocurre porque, aunque el modelo de MongoDB tiene configurada correctamente la validación `enum`, la función de actualización no ejecutaba los validadores de Mongoose.
+
+**Backend:**
+
+En el archivo `Criatura.model.ts`, los tipos permitidos están definidos mediante:
+
+```ts
+export const TIPOS = [
+  'mitica',
+  'elemental',
+  'mecanica',
+  'espectral'
+] as const;
+```
+
+Y el esquema utiliza:
+
+```ts
 tipo: {
   type: String,
   required: true,
-  enum: {
-    values: ['mitica', 'elemental', 'mecanica', 'espectral'],
-    message: '{VALUE} no es un tipo de criatura válido'
-  }
+  enum: [...TIPOS]
 }
-De esta manera:
+```
 
-Una actualización con un tipo válido (como 'mitica') responderá con status 200 OK.
+Sin embargo, en `criaturas.service.ts`, la función `actualizar()` utilizaba:
 
-El valor 'fantasma' (o cualquier otro fuera de la lista) será rechazado con un error de validación, retornando status 400 Bad Request y un mensaje descriptivo.
+```ts
+const doc = await Criatura.findByIdAndUpdate(
+  idValido(id),
+  { $set: cambios },
+  { new: true }
+);
+```
 
-Las consultas posteriores (GET) conservarán el último valor válido registrado sin corromper el estado del documento.
+Por defecto, `findByIdAndUpdate()` no ejecuta los validadores del esquema, permitiendo almacenar valores que incumplen las restricciones del modelo.
+
+**Impacto:**
+
+El selector HTML del frontend limita las opciones disponibles para el usuario, pero no protege directamente los endpoints de la API. Esto permite que clientes HTTP externos envíen valores inválidos y generen inconsistencias en MongoDB.
+
+**Solución:** Agregar `runValidators: true` a la consulta de actualización para ejecutar las validaciones definidas en el esquema.
+
+Cambiar:
+
+```ts
+const doc = await Criatura.findByIdAndUpdate(
+  idValido(id),
+  { $set: cambios },
+  { new: true }
+);
+```
+
+Por:
+
+```ts
+const doc = await Criatura.findByIdAndUpdate(
+  idValido(id),
+  { $set: cambios },
+  {
+    new: true,
+    runValidators: true
+  }
+);
+```
+
+De esta manera, Mongoose comprueba que el tipo enviado pertenezca a los valores permitidos.
+
+**Verificación esperada:**
+
+- Una actualización con `"tipo": "mitica"` devuelve `200 OK`.
+- Una actualización con `"tipo": "fantasma"` devuelve `400 Bad Request` con un mensaje de validación.
+- Una consulta GET posterior conserva el último tipo válido almacenado.
+
+**Estado:** Corrección implementada en el código. Pendiente de confirmar los tres resultados mediante Thunder Client.
